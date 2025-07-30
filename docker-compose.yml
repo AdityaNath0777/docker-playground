@@ -1,0 +1,16 @@
+version: '0.1'
+
+services:
+  postgres:
+    image: postgres
+    ports:
+      - "5432:5432"
+    restart: always
+    environment:
+      POSTGRES_USER:  postgres
+      POSTGRES_DB: ts-node-test
+      POSTGRES_PASSWORD: password
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
