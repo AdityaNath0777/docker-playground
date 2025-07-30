@@ -12,6 +12,8 @@ COPY package.json package.json
 COPY package-lock.json package-lock.json
 COPY tsconfig.json tsconfig.json
 COPY README.md README.md
+COPY .env.sample .env.sample
+COPY .gitignore .gitignore
 COPY src src
 
 RUN npm install
