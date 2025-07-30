@@ -177,12 +177,188 @@ docker compose up
 ```
 
 - to run it silently in background
+
 ```bash
 docker compose up -d
 ```
+
 d flag is for dettached mode - to detach the task and run it in bg
 
 - to close the docker containers made from this docker compose
+
 ```bash
 docker compose down
+```
+
+## Configuring Individual Containers
+
+### Docker Network
+
+- create a docker network so that the containers can communicate with each other via this network.
+- This docker acts as a bridge
+- command to create a docker network  
+  `docker network create <network name>`
+
+```bash
+docker network create my-network
+```
+
+- running an individual postgres container
+
+```bash
+docker run -d -p 5432:5432 --name test-postgres --network my-network -e POSTGRES_PASSWORD=password -e POSTGRES_USER=admin postgres
+```
+
+- open a default postgres database within the container
+
+```bash
+docker exec -it test-postgres psql -U admin -d postgres
+```
+
+We are now in the PostgreSQL server terminal within the process running inside the container
+
+```bash
+psql (17.5 (Debian 17.5-1.pgdg120+1))
+Type "help" for help.
+
+$namaste-meethai-db=# \c
+You are now connected to database "namaste-meethai-db" as user "admin".
+
+$namaste-meethai-db=# \dt
+Did not find any relations.
+```
+
+- `\c` is the command to get the connected database and user
+- `\dt` is get all the tables inside the current connected database
+
+```bash
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL
+);
+```
+
+using the `;` is necessary else the cli will show `namaste-meethai-db(=#` everywhere, see it has a `(`, for multiline commands
+after completing the statement, ensure to use `;` to tell the postgres current query statement is completed
+
+Insert dummy data into the DB
+
+```bash
+INSERT INTO users (name, email, password) VALUES ('Aarav Sharma', 'aarav.sharma@example.com', 'pass123');
+INSERT INTO users (name, email, password) VALUES ('Aditi Singh', 'aditi.singh@example.com', 'pass456');
+INSERT INTO users (name, email, password) VALUES ('Rohan Kumar', 'rohan.kumar@example.com', 'securepass');
+INSERT INTO users (name, email, password) VALUES ('Priya Devi', 'priya.devi@example.com', 'mysecret');
+```
+
+- I made some changes and added a simple GET `/users` route to return the user's details saved within the DB
+
+- DB configuration and connection
+
+```ts
+// db/pg.ts
+import { Pool, PoolClient } from "pg";
+
+const pgConfig = {
+  user: process.env.POSTGRES_USER || "admin",
+  host: process.env.POSTGRES_HOST || "localhost",
+  database: process.env.POSTGRES_DATABASE || "my-database",
+  password: process.env.POSTGRES_PASSWORD || "password",
+  port: parseInt(process.env.POSTGRES_PORT || "") || 5432,
+};
+
+const pool = new Pool(pgConfig);
+
+async function connectToDB() {
+  try {
+    const client: PoolClient = await pool.connect();
+    console.log(`Connected to PostgreSQL DB successfully`);
+    client.release();
+    return true;
+  } catch (err) {
+    if (err instanceof Error) {
+      console.error(`DATABASE_CONNECTION_ERROR: `, err.stack);
+    }
+    return false;
+  }
+}
+
+export { pool, connectToDB };
+```
+
+- User Controller
+
+```ts
+// controllers/user.controller.ts
+const getUsers = async (
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email FROM users LIMIT 100`
+    );
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(result.rows));
+  } catch (err) {
+    // error handling
+  }
+};
+```
+
+- Connecting the DB, Defining the route and calling the controller
+
+```ts
+// index.ts
+connectToDB().then((success) => {
+  if (success) {
+    server.listen(PORT, () => console.log(`Server running on PORT ${PORT}`));
+  } else {
+    console.error("Failed to connect to the database. Server will not start.");
+    process.exit(1);
+  }
+});
+
+const server: http.Server = http.createServer(
+  async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    console.log(`Request received: ${req.method} ${req.url}`);
+
+    if (req.url === "/") {
+      // some routes
+    } else if (req.url === "/users" && req.method === "GET") {
+      // calling the getUsers user controller
+      userController.getUsers(req, res);
+    } else {
+      // other routes
+    }
+  }
+);
+```
+
+- build the new image
+
+```bash
+docker build -t pg-ts-server .
+```
+
+- run the container with required configurations
+  - networking
+  - port binding
+  - env variables
+  - container name
+  - image to run
+
+```bash
+docker run -it \
+  --network my-network \
+  -p 4040:4040 \
+  -e PORT=4040 \
+  -e POSTGRES_HOST=test-postgres \
+  -e POSTGRES_PORT=5432 \
+  -e POSTGRES_USER=admin \
+  -e POSTGRES_DATABASE="namaste-meethai-db" \
+  -e POSTGRES_PASSWORD=password \
+  --name pg-ts-test-server \
+  ps-ts-node-server
 ```
